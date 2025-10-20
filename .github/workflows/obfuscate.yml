@@ -29,7 +29,13 @@ jobs:
           Invoke-WebRequest -Uri "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe" -OutFile "nuget.exe"
         shell: pwsh
 
-      # Step 4: Update .csproj files for .NET Framework 4.8.1 (handle both SDK and legacy styles)
+      # Step 4: Add MSBuild to PATH (using official action based on vswhere)
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+        with:
+          msbuild-architecture: x64  # Use x64 for better compatibility with .NET Framework builds
+
+      # Step 5: Update .csproj files for .NET Framework 4.8.1 (handle both SDK and legacy styles)
       - name: Update project files
         run: |
           $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
@@ -46,28 +52,14 @@ jobs:
                 $content = $content -replace '<TargetFrameworkVersion>.*</TargetFrameworkVersion>', '<TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>'
               } else {
                 # Add if missing (insert after first <PropertyGroup>)
-                $propGroupIndex = $content.IndexOf('<PropertyGroup>') + 1
-                if ($propGroupIndex -gt 0) {
-                  $content = $content[0..($propGroupIndex-1)] + '<TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>' + $content[$propGroupIndex..$content.Length]
+                $firstPropertyGroup = $content | Select-String -Pattern '<PropertyGroup>' | Select-Object -First 1
+                if ($firstPropertyGroup) {
+                  $content = $content -replace '<PropertyGroup>', '<PropertyGroup><TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>'
                 }
               }
               
               Set-Content $csproj.FullName $content
             }
-          }
-        shell: pwsh
-
-      # Step 5: Find MSBuild path using vswhere
-      - name: Locate MSBuild
-        id: vswhere
-        run: |
-          $msbuildPath = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
-          $msbuildPath = Join-Path $msbuildPath "MSBuild\Current\Bin\MSBuild.exe"
-          if (Test-Path $msbuildPath) {
-            echo "MSBUILD_PATH=$msbuildPath" >> $env:GITHUB_ENV
-          } else {
-            echo "MSBuild not found" >&2
-            exit 1
           }
         shell: pwsh
 
@@ -79,11 +71,11 @@ jobs:
             $sln = Get-ChildItem -Path ./$tool -Recurse -Include *.sln | Select-Object -First 1
             if ($sln) {
               & ./nuget.exe restore $sln
-              & "$env:MSBUILD_PATH" $sln /p:Configuration=Release /p:Platform="Any CPU"
+              msbuild $sln /p:Configuration=Release /p:Platform="Any CPU"
             } else {
               $csproj = Get-ChildItem -Path ./$tool -Recurse -Include *.csproj | Select-Object -First 1
               & ./nuget.exe restore $csproj
-              & "$env:MSBUILD_PATH" $csproj /p:Configuration=Release /p:Platform="Any CPU"
+              msbuild $csproj /p:Configuration=Release /p:Platform="Any CPU"
             }
           }
         shell: pwsh
@@ -102,11 +94,16 @@ jobs:
           foreach ($tool in $tools) {
             $exe = Get-ChildItem -Path ./$tool -Recurse -Include "$tool.exe" | Where-Object { $_.FullName -like "*bin\Release*" } | Select-Object -First 1
             if ($exe) {
-              $crproj = Join-Path .\.github\config "$tool.crproj"
-              (Get-Content .\.github\config\template.crproj) -replace '{{EXE_PATH}}', $exe.FullName -replace '{{OUTPUT_DIR}}', "$tool\output-obfuscated" | Set-Content $crproj
-              & ./ConfuserEx/Confuser.CLI.exe -n $crproj
+              $crprojPath = Join-Path .\.github\config "$tool.crproj"
+              $templatePath = Join-Path .\.github\config "template.crproj"
+              if (Test-Path $templatePath) {
+                (Get-Content $templatePath) -replace '{{EXE_PATH}}', $exe.FullName -replace '{{OUTPUT_DIR}}', "$tool\output-obfuscated" | Set-Content $crprojPath
+                & ./ConfuserEx/Confuser.CLI.exe -n $crprojPath
+              } else {
+                Write-Output "Template crproj not found for $tool"
+              }
             } else {
-              echo "Executable for $tool not found in bin\Release" >&2
+              Write-Output "Executable for $tool not found in bin\Release"
             }
           }
         shell: pwsh
@@ -118,7 +115,7 @@ jobs:
           $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
           foreach ($tool in $tools) {
             if (Test-Path ./$tool/output-obfuscated) {
-              Compress-Archive -Path ./$tool/output-obfuscated/* -DestinationPath ./$tool-$date.zip
+              Compress-Archive -Path ./$tool/output-obfuscated/* -DestinationPath "./$tool-$date.zip"
             }
           }
         shell: pwsh
