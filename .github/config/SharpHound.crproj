@@ -1,5 +1,5 @@
-<project baseDir="SharpHound/output" outputDir="SharpHound/output-obfuscated">
-  <module path="SharpHound.exe" />
+<project baseDir="." outputDir="SharpHound\output-obfuscated">
+  <module path="SharpHound\bin\Release\net481\SharpHound.exe" />
   <rule pattern="true">
     <protection id="rename" />
     <protection id="ctrl flow" />
