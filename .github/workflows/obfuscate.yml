@@ -1,0 +1,75 @@
+name: Weekly Obfuscated Builds
+
+on:
+  schedule:
+    - cron: '0 0 * * 1' # Runs every Monday at midnight UTC
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  build-and-obfuscate:
+    runs-on: windows-latest # Use Windows for .NET and ConfuserEx compatibility
+    steps:
+      # Step 1: Checkout the automation repo
+      - name: Checkout automation repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up .NET SDK
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x' # Adjust based on tool requirements
+
+      # Step 3: Clone tool repositories
+      - name: Clone repositories
+        run: |
+          git clone https://github.com/BloodHoundAD/SharpHound.git
+          git clone https://github.com/GhostPack/Seatbelt.git
+          git clone https://github.com/GhostPack/Rubeus.git
+          git clone https://github.com/GhostPack/Certify.git
+          git clone https://github.com/Mayyhem/SharpSCCM.git
+
+      # Step 4: Build tools
+      - name: Build tools
+        run: |
+          $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
+          foreach ($tool in $tools) {
+            cd $tool
+            dotnet publish -c Release -o ./output
+            cd ..
+          }
+        shell: pwsh
+
+      # Step 5: Download and setup ConfuserEx
+      - name: Setup ConfuserEx
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/mkaring/ConfuserEx/releases/download/v1.6.0/ConfuserEx-CLI.zip" -OutFile "ConfuserEx.zip"
+          Expand-Archive -Path ConfuserEx.zip -DestinationPath ./ConfuserEx
+        shell: pwsh
+
+      # Step 6: Obfuscate binaries
+      - name: Obfuscate with ConfuserEx
+        run: |
+          $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
+          foreach ($tool in $tools) {
+            # Assume .crproj files are in the automation repo
+            & ./ConfuserEx/Confuser.CLI.exe -n ./.github/config/$tool.crproj
+          }
+        shell: pwsh
+
+      # Step 7: Package and store artifacts
+      - name: Package artifacts
+        run: |
+          $date = Get-Date -Format "yyyy-MM-dd"
+          $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
+          foreach ($tool in $tools) {
+            Compress-Archive -Path ./$tool/output-obfuscated/* -DestinationPath ./$tool-$date.zip
+          }
+        shell: pwsh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: obfuscated-binaries
+          path: |
+            *.zip
+          retention-days: 7

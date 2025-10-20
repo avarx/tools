@@ -1,0 +1,10 @@
+<project baseDir="SharpHound/output" outputDir="SharpHound/output-obfuscated">
+  <module path="SharpHound.exe" />
+  <rule pattern="true">
+    <protection id="rename" />
+    <protection id="ctrl flow" />
+    <protection id="anti ildasm" />
+    <protection id="ref proxy" />
+    <protection id="resources" />
+  </rule>
+</project>
