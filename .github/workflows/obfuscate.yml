@@ -124,12 +124,12 @@ jobs:
             if ($exe) {
               $crprojPath = Join-Path ./.github/config "$tool.crproj"
               $templatePath = Join-Path ./.github/config "template.crproj"
-              if (Test-Path $crprojPath) {
-                Write-Output "Using existing $crprojPath for $tool"
-                & ./ConfuserEx/Confuser.CLI.exe -n $crprojPath
-              } elseif (Test-Path $templatePath) {
+              if (Test-Path $templatePath) {
                 Write-Output "Generating $crprojPath from template for $tool"
-                (Get-Content $templatePath) -replace '{{EXE_PATH}}', $exe.FullName -replace '{{OUTPUT_DIR}}', "$tool\output-obfuscated" | Set-Content $crprojPath
+                $content = (Get-Content $templatePath) -replace '{{EXE_PATH}}', $exe.FullName -replace '{{OUTPUT_DIR}}', "$tool\output-obfuscated"
+                Set-Content $crprojPath $content
+                Write-Output "Generated $crprojPath content:"
+                Write-Output $content
                 & ./ConfuserEx/Confuser.CLI.exe -n $crprojPath
               } else {
                 Write-Error "Template crproj not found at $templatePath for $tool"
