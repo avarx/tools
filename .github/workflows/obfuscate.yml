@@ -23,7 +23,13 @@ jobs:
           git clone https://github.com/Mayyhem/SharpSCCM.git
         shell: pwsh
 
-      # Step 3: Update .csproj files for .NET Framework 4.8.1 (handle both SDK and legacy styles)
+      # Step 3: Install NuGet to restore dependencies
+      - name: Install NuGet
+        run: |
+          Invoke-WebRequest -Uri "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe" -OutFile "nuget.exe"
+        shell: pwsh
+
+      # Step 4: Update .csproj files for .NET Framework 4.8.1 (handle both SDK and legacy styles)
       - name: Update project files
         run: |
           $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
@@ -51,29 +57,45 @@ jobs:
           }
         shell: pwsh
 
-      # Step 4: Build tools with MSBuild
-      - name: Build tools
+      # Step 5: Find MSBuild path using vswhere
+      - name: Locate MSBuild
+        id: vswhere
+        run: |
+          $msbuildPath = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+          $msbuildPath = Join-Path $msbuildPath "MSBuild\Current\Bin\MSBuild.exe"
+          if (Test-Path $msbuildPath) {
+            echo "MSBUILD_PATH=$msbuildPath" >> $env:GITHUB_ENV
+          } else {
+            echo "MSBuild not found" >&2
+            exit 1
+          }
+        shell: pwsh
+
+      # Step 6: Restore NuGet packages and build tools with MSBuild
+      - name: Restore and build tools
         run: |
           $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
           foreach ($tool in $tools) {
             $sln = Get-ChildItem -Path ./$tool -Recurse -Include *.sln | Select-Object -First 1
             if ($sln) {
-              & "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\MSBuild\Current\Bin\MSBuild.exe" $sln /p:Configuration=Release /p:Platform="Any CPU"
+              & ./nuget.exe restore $sln
+              & "$env:MSBUILD_PATH" $sln /p:Configuration=Release /p:Platform="Any CPU"
             } else {
               $csproj = Get-ChildItem -Path ./$tool -Recurse -Include *.csproj | Select-Object -First 1
-              & "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\MSBuild\Current\Bin\MSBuild.exe" $csproj /p:Configuration=Release /p:Platform="Any CPU"
+              & ./nuget.exe restore $csproj
+              & "$env:MSBUILD_PATH" $csproj /p:Configuration=Release /p:Platform="Any CPU"
             }
           }
         shell: pwsh
 
-      # Step 5: Download and setup ConfuserEx
+      # Step 7: Download and setup ConfuserEx
       - name: Setup ConfuserEx
         run: |
           Invoke-WebRequest -Uri "https://github.com/mkaring/ConfuserEx/releases/download/v1.6.0/ConfuserEx-CLI.zip" -OutFile "ConfuserEx.zip"
           Expand-Archive -Path ConfuserEx.zip -DestinationPath ./ConfuserEx
         shell: pwsh
 
-      # Step 6: Obfuscate binaries (flexible path for SDK/legacy outputs)
+      # Step 8: Obfuscate binaries (flexible path for SDK/legacy outputs)
       - name: Obfuscate with ConfuserEx
         run: |
           $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
@@ -83,11 +105,13 @@ jobs:
               $crproj = Join-Path .\.github\config "$tool.crproj"
               (Get-Content .\.github\config\template.crproj) -replace '{{EXE_PATH}}', $exe.FullName -replace '{{OUTPUT_DIR}}', "$tool\output-obfuscated" | Set-Content $crproj
               & ./ConfuserEx/Confuser.CLI.exe -n $crproj
+            } else {
+              echo "Executable for $tool not found in bin\Release" >&2
             }
           }
         shell: pwsh
 
-      # Step 7: Package and store artifacts
+      # Step 9: Package and store artifacts
       - name: Package artifacts
         run: |
           $date = Get-Date -Format "yyyy-MM-dd"
