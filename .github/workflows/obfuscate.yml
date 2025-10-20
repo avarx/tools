@@ -29,13 +29,7 @@ jobs:
           Invoke-WebRequest -Uri "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe" -OutFile "nuget.exe"
         shell: pwsh
 
-      # Step 4: Add MSBuild to PATH (using official action based on vswhere)
-      - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@v2
-        with:
-          msbuild-architecture: x64  # Use x64 for better compatibility with .NET Framework builds
-
-      # Step 5: Update .csproj files for .NET Framework 4.8.1 (handle both SDK and legacy styles)
+      # Step 4: Update .csproj files for .NET Framework 4.8.1 (handle both SDK and legacy styles)
       - name: Update project files
         run: |
           $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
@@ -52,14 +46,48 @@ jobs:
                 $content = $content -replace '<TargetFrameworkVersion>.*</TargetFrameworkVersion>', '<TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>'
               } else {
                 # Add if missing (insert after first <PropertyGroup>)
-                $firstPropertyGroup = $content | Select-String -Pattern '<PropertyGroup>' | Select-Object -First 1
-                if ($firstPropertyGroup) {
-                  $content = $content -replace '<PropertyGroup>', '<PropertyGroup><TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>'
+                $propGroupIndex = $content.IndexOf('<PropertyGroup>') + 1
+                if ($propGroupIndex -gt 0) {
+                  $content = $content[0..($propGroupIndex-1)] + '<TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>' + $content[$propGroupIndex..$content.Length]
                 }
               }
               
               Set-Content $csproj.FullName $content
             }
+          }
+        shell: pwsh
+
+      # Step 5: Find MSBuild path using vswhere
+      - name: Locate MSBuild
+        id: vswhere
+        run: |
+          Write-Output "Running vswhere to locate MSBuild..."
+          $vswherePath = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswherePath) {
+            $msbuildPath = & $vswherePath -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+            if ($msbuildPath) {
+              $msbuildPath = Join-Path $msbuildPath "MSBuild\Current\Bin\MSBuild.exe"
+              if (Test-Path $msbuildPath) {
+                Write-Output "MSBuild found at: $msbuildPath"
+                echo "MSBUILD_PATH=$msbuildPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+              } else {
+                Write-Output "MSBuild not found at expected path, trying fallback..."
+                $fallbackPath = "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe"
+                if (Test-Path $fallbackPath) {
+                  Write-Output "Fallback MSBuild found at: $fallbackPath"
+                  echo "MSBUILD_PATH=$fallbackPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+                } else {
+                  Write-Error "MSBuild not found at fallback path: $fallbackPath"
+                  exit 1
+                }
+              }
+            } else {
+              Write-Error "vswhere returned no valid installation path"
+              exit 1
+            }
+          } else {
+            Write-Error "vswhere not found at: $vswherePath"
+            exit 1
           }
         shell: pwsh
 
@@ -71,11 +99,11 @@ jobs:
             $sln = Get-ChildItem -Path ./$tool -Recurse -Include *.sln | Select-Object -First 1
             if ($sln) {
               & ./nuget.exe restore $sln
-              msbuild $sln /p:Configuration=Release /p:Platform="Any CPU"
+              & "$env:MSBUILD_PATH" $sln /p:Configuration=Release /p:Platform="Any CPU"
             } else {
               $csproj = Get-ChildItem -Path ./$tool -Recurse -Include *.csproj | Select-Object -First 1
               & ./nuget.exe restore $csproj
-              msbuild $csproj /p:Configuration=Release /p:Platform="Any CPU"
+              & "$env:MSBUILD_PATH" $csproj /p:Configuration=Release /p:Platform="Any CPU"
             }
           }
         shell: pwsh
@@ -87,20 +115,53 @@ jobs:
           Expand-Archive -Path ConfuserEx.zip -DestinationPath ./ConfuserEx
         shell: pwsh
 
-      # Step 8: Obfuscate binaries (flexible path for SDK/legacy outputs)
+      # Step 8: Create or verify template.crproj
+      - name: Create or verify template.crproj
+        run: |
+          $configDir = ".github/config"
+          $templatePath = Join-Path $configDir "template.crproj"
+          Write-Output "Checking for template.crproj at $templatePath"
+          if (-not (Test-Path $configDir)) {
+            New-Item -ItemType Directory -Path $configDir -Force
+            Write-Output "Created directory $configDir"
+          }
+          if (-not (Test-Path $templatePath)) {
+            Set-Content -Path $templatePath -Value @"
+<project baseDir="." outputDir="{{OUTPUT_DIR}}">
+  <module path="{{EXE_PATH}}" />
+  <rule pattern="true">
+    <protection id="rename" />
+    <protection id="ctrl flow" />
+    <protection id="anti ildasm" />
+    <protection id="ref proxy" />
+    <protection id="resources" />
+  </rule>
+</project>
+"@
+            Write-Output "Created default template.crproj at $templatePath"
+          } else {
+            Write-Output "Found existing template.crproj at $templatePath"
+          }
+        shell: pwsh
+
+      # Step 9: Obfuscate binaries
       - name: Obfuscate with ConfuserEx
         run: |
           $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
           foreach ($tool in $tools) {
             $exe = Get-ChildItem -Path ./$tool -Recurse -Include "$tool.exe" | Where-Object { $_.FullName -like "*bin\Release*" } | Select-Object -First 1
             if ($exe) {
-              $crprojPath = Join-Path .\.github\config "$tool.crproj"
-              $templatePath = Join-Path .\.github\config "template.crproj"
-              if (Test-Path $templatePath) {
+              $crprojPath = Join-Path ./.github/config "$tool.crproj"
+              $templatePath = Join-Path ./.github/config "template.crproj"
+              if (Test-Path $crprojPath) {
+                Write-Output "Using existing $crprojPath for $tool"
+                & ./ConfuserEx/Confuser.CLI.exe -n $crprojPath
+              } elseif (Test-Path $templatePath) {
+                Write-Output "Generating $crprojPath from template for $tool"
                 (Get-Content $templatePath) -replace '{{EXE_PATH}}', $exe.FullName -replace '{{OUTPUT_DIR}}', "$tool\output-obfuscated" | Set-Content $crprojPath
                 & ./ConfuserEx/Confuser.CLI.exe -n $crprojPath
               } else {
-                Write-Output "Template crproj not found for $tool"
+                Write-Output "Template crproj not found at $templatePath for $tool"
               }
             } else {
               Write-Output "Executable for $tool not found in bin\Release"
@@ -108,18 +169,19 @@ jobs:
           }
         shell: pwsh
 
-      # Step 9: Package and store artifacts
+      # Step 10: Package and store artifacts
       - name: Package artifacts
         run: |
           $date = Get-Date -Format "yyyy-MM-dd"
           $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
           foreach ($tool in $tools) {
             if (Test-Path ./$tool/output-obfuscated) {
-              Compress-Archive -Path ./$tool/output-obfuscated/* -DestinationPath "./$tool-$date.zip"
+              Compress-Archive -Path ./$tool/output-obfuscated/* -DestinationPath ./$tool-$date.zip
             }
           }
         shell: pwsh
 
+      # Step 11: Upload artifacts
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

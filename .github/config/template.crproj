@@ -1,0 +1,10 @@
+<project baseDir="." outputDir="{{OUTPUT_DIR}}">
+  <module path="{{EXE_PATH}}" />
+  <rule pattern="true">
+    <protection id="rename" />
+    <protection id="ctrl flow" />
+    <protection id="anti ildasm" />
+    <protection id="ref proxy" />
+    <protection id="resources" />
+  </rule>
+</project>
