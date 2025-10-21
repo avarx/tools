@@ -1,194 +1,64 @@
-name: Weekly Obfuscated Builds for .NET Framework 4.8.1
+name: Obfuscate SharpSCCM with Codecepticon
+
 on:
-  schedule:
-    - cron: '0 0 * * 1' # Runs every Monday at midnight UTC
-  workflow_dispatch: # Allows manual triggering
+  push:
+    branches: [ main ]
+
 jobs:
-  build-and-obfuscate:
-    runs-on: windows-latest # .NET Framework 4.8.1 is pre-installed
+  obfuscate:
+    runs-on: windows-latest  # Use Windows for .NET compatibility; Linux possible with tweaks
+
     steps:
-      # Step 1: Checkout the automation repo
-      - name: Checkout automation repository
-        uses: actions/checkout@v4
-      # Step 2: Clone tool repositories
-      - name: Clone repositories
-        run: |
-          git clone https://github.com/BloodHoundAD/SharpHound.git
-          git clone https://github.com/GhostPack/Seatbelt.git
-          git clone https://github.com/GhostPack/Rubeus.git
-          git clone https://github.com/GhostPack/Certify.git
-          git clone https://github.com/Mayyhem/SharpSCCM.git
-        shell: pwsh
-      # Step 3: Install NuGet to restore dependencies
-      - name: Install NuGet
-        run: |
-          Invoke-WebRequest -Uri "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe" -OutFile "nuget.exe"
-        shell: pwsh
-      # Step 4: Update .csproj files for .NET Framework 4.8.1 (handle both SDK and legacy styles)
-      - name: Update project files
-        run: |
-          $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
-          foreach ($tool in $tools) {
-            $csprojFiles = Get-ChildItem -Path ./$tool -Recurse -Include *.csproj
-            foreach ($csproj in $csprojFiles) {
-              $content = Get-Content $csproj.FullName
-              
-              # For SDK-style: Replace <TargetFramework> and add CopyLocalLockFileAssemblies
-              if ($content -match '<Project Sdk=') {
-                $content = $content -replace '<TargetFramework>.*</TargetFramework>', '<TargetFramework>net481</TargetFramework>'
-                if ($content -notmatch 'CopyLocalLockFileAssemblies') {
-                  $propGroupIndex = $content.IndexOf('<PropertyGroup>') + 1
-                  if ($propGroupIndex -gt 0) {
-                    $content = $content[0..($propGroupIndex-1)] + '  <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>' + $content[$propGroupIndex..$content.Length]
-                  }
-                }
-              }
-              # For legacy-style: Replace or add <TargetFrameworkVersion>
-              else {
-                if ($content -match '<TargetFrameworkVersion>.*</TargetFrameworkVersion>') {
-                  $content = $content -replace '<TargetFrameworkVersion>.*</TargetFrameworkVersion>', '<TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>'
-                } else {
-                  $propGroupIndex = $content.IndexOf('<PropertyGroup>') + 1
-                  if ($propGroupIndex -gt 0) {
-                    $content = $content[0..($propGroupIndex-1)] + '  <TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>' + $content[$propGroupIndex..$content.Length]
-                  }
-                }
-              }
-              
-              Set-Content $csproj.FullName $content
-              
-              # For SharpHound, create FodyWeavers.xml to exclude SharpHoundCommonLib from Costura
-              if ($tool -eq "SharpHound") {
-                $fodyWeaversPath = Join-Path $csproj.DirectoryName "FodyWeavers.xml"
-                $fodyContent = @"
-<?xml version="1.0" encoding="utf-8"?>
-<Weavers>
-  <Costura>
-    <ExcludeAssemblies>SharpHoundCommonLib</ExcludeAssemblies>
-  </Costura>
-</Weavers>
-"@
-                Set-Content $fodyWeaversPath $fodyContent
-                Write-Output "Created $fodyWeaversPath to exclude SharpHoundCommonLib from Costura embedding"
-              }
-            }
-          }
-        shell: pwsh
-      # Step 5: Find MSBuild path using vswhere
-      - name: Locate MSBuild
-        id: vswhere
-        run: |
-          Write-Output "Running vswhere to locate MSBuild..."
-          $vswherePath = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (Test-Path $vswherePath) {
-            $msbuildPath = & $vswherePath -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
-            if ($msbuildPath) {
-              $msbuildPath = Join-Path $msbuildPath "MSBuild\Current\Bin\MSBuild.exe"
-              if (Test-Path $msbuildPath) {
-                Write-Output "MSBuild found at: $msbuildPath"
-                echo "MSBUILD_PATH=$msbuildPath" | Out-File -FilePath $env:GITHUB_ENV -Append
-              } else {
-                Write-Output "MSBuild not found at expected path, trying fallback..."
-                $fallbackPath = "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe"
-                if (Test-Path $fallbackPath) {
-                  Write-Output "Fallback MSBuild found at: $fallbackPath"
-                  echo "MSBUILD_PATH=$fallbackPath" | Out-File -FilePath $env:GITHUB_ENV -Append
-                } else {
-                  Write-Error "MSBuild not found at fallback path: $fallbackPath"
-                  exit 1
-                }
-              }
-            } else {
-              Write-Error "vswhere returned no valid installation path"
-              exit 1
-            }
-          } else {
-            Write-Error "vswhere not found at: $vswherePath"
-            exit 1
-          }
-        shell: pwsh
-      # Step 6: Restore NuGet packages and build tools with MSBuild
-      - name: Restore and build tools
-        run: |
-          $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
-          foreach ($tool in $tools) {
-            $sln = Get-ChildItem -Path ./$tool -Recurse -Include *.sln | Select-Object -First 1
-            if ($sln) {
-              & ./nuget.exe restore $sln
-              & "$env:MSBUILD_PATH" $sln /p:Configuration=Release /p:Platform="Any CPU"
-            } else {
-              $csproj = Get-ChildItem -Path ./$tool -Recurse -Include *.csproj | Select-Object -First 1
-              & ./nuget.exe restore $csproj
-              & "$env:MSBUILD_PATH" $csproj /p:Configuration=Release /p:Platform="Any CPU"
-            }
-          }
-        shell: pwsh
-      # Step 7: Debug SharpHound output directory
-      - name: Debug SharpHound output directory
-        run: |
-          dir ./SharpHound/bin/Release/net481
-        shell: pwsh
-        continue-on-error: true
-      # Step 8: Debug FodyWeavers.xml
-      - name: Debug FodyWeavers.xml
-        run: |
-          if (Test-Path ./SharpHound/FodyWeavers.xml) {
-            Get-Content ./SharpHound/FodyWeavers.xml
-          } else {
-            Write-Output "FodyWeavers.xml not found"
-          }
-        shell: pwsh
-        continue-on-error: true
-      # Step 9: Download and setup ConfuserEx
-      - name: Setup ConfuserEx
-        run: |
-          Invoke-WebRequest -Uri "https://github.com/mkaring/ConfuserEx/releases/download/v1.6.0/ConfuserEx-CLI.zip" -OutFile "ConfuserEx.zip"
-          Expand-Archive -Path ConfuserEx.zip -DestinationPath ./ConfuserEx
-        shell: pwsh
-      # Step 10: Obfuscate with ConfuserEx
-      - name: Obfuscate with ConfuserEx
-        run: |
-          $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
-          foreach ($tool in $tools) {
-            $exe = Get-ChildItem -Path ./$tool -Recurse -Include "$tool.exe" | Where-Object { $_.FullName -like "*bin\Release*" } | Select-Object -First 1
-            if ($exe) {
-              Write-Output "Found executable for $tool at: $($exe.FullName)"
-              $crprojPath = Join-Path ./.github/config "$tool.crproj"
-              $templatePath = Join-Path ./.github/config "template.crproj"
-              if (Test-Path $templatePath) {
-                Write-Output "Generating $crprojPath from template for $tool"
-                $repoRoot = (Get-Location).Path
-                $exePath = $exe.FullName.Substring($repoRoot.Length + 1) -replace '\\', '/'
-                $content = (Get-Content $templatePath) -replace '{{EXE_PATH}}', $exePath -replace '{{OUTPUT_DIR}}', "$tool\output-obfuscated" -replace 'baseDir="."', 'baseDir="..\\..\\"'
-                Set-Content $crprojPath $content
-                Write-Output "Generated $crprojPath content:"
-                Write-Output $content
-                & ./ConfuserEx/Confuser.CLI.exe -n $crprojPath
-              } else {
-                Write-Error "Template crproj not found at $templatePath for $tool"
-                exit 1
-              }
-            } else {
-              Write-Output "Executable for $tool not found in bin\Release"
-            }
-          }
-        shell: pwsh
-      # Step 11: Package and store artifacts
-      - name: Package artifacts
-        run: |
-          $date = Get-Date -Format "yyyy-MM-dd"
-          $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
-          foreach ($tool in $tools) {
-            if (Test-Path ./$tool/output-obfuscated) {
-              Compress-Archive -Path ./$tool/output-obfuscated/* -DestinationPath ./$tool-$date.zip
-            }
-          }
-        shell: pwsh
-      # Step 12: Upload artifacts
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: obfuscated-binaries-net481
-          path: |
-            *.zip
-          retention-days: 7
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        path: main-repo  # Shallow clone of your repo (if hosting this workflow)
+
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'  # Adjust to match SharpSCCM/Codecepticon needs
+
+    - name: Clone and build SharpSCCM
+      run: |
+        git clone https://github.com/Mayyhem/SharpSCCM.git
+        cd SharpSCCM
+        dotnet restore SharpSCCM.sln  # Ensure it builds cleanly before obfuscation
+        dotnet build SharpSCCM.sln --configuration Release --no-restore
+        cd ..
+
+    - name: Clone and build Codecepticon
+      run: |
+        git clone https://github.com/sadreck/Codecepticon.git
+        cd Codecepticon
+        # Restore with pinned Roslyn v3.9.0 (add to Directory.Build.props if needed)
+        dotnet restore
+        dotnet build --configuration Release --no-restore
+        cd ..
+
+    - name: Obfuscate SharpSCCM
+      run: |
+        cd Codecepticon/Release/net6.0  # Or net8.0 depending on build
+        # Example CLI: Adjust params via generator; use XML for complex configs
+        ./Codecepticon.exe --action obfuscate --module csharp --solution ../path/to/SharpSCCM/SharpSCCM.sln --verbose --rename-strategy random --encrypt-strings --output-mappings ../obfuscated-mappings.html
+        # If using XML: ./Codecepticon.exe --config path/to/config.xml
+      shell: pwsh  # PowerShell for Windows compatibility
+
+    - name: Build obfuscated SharpSCCM
+      run: |
+        cd SharpSCCM
+        dotnet build SharpSCCM.sln --configuration Release --no-restore
+        # Output: bin/Release/netX.0/SharpSCCM.exe (now obfuscated)
+
+    - name: Upload obfuscated binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: obfuscated-sharpsccm
+        path: SharpSCCM/bin/Release/net*/SharpSCCM.exe
+        retention-days: 7
+
+    - name: Upload mappings (for CLI rewriting)
+      uses: actions/upload-artifact@v4
+      with:
+        name: obfuscation-mappings
+        path: Codecepticon/obfuscated-mappings.html
