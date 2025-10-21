@@ -38,17 +38,26 @@ jobs:
             foreach ($csproj in $csprojFiles) {
               $content = Get-Content $csproj.FullName
               
-              # For SDK-style: Replace <TargetFramework>
-              $content = $content -replace '<TargetFramework>.*</TargetFramework>', '<TargetFramework>net481</TargetFramework>'
-              
+              # For SDK-style: Replace <TargetFramework> and add CopyLocalLockFileAssemblies
+              if ($content -match '<Project Sdk=') {
+                $content = $content -replace '<TargetFramework>.*</TargetFramework>', '<TargetFramework>net481</TargetFramework>'
+                # Add CopyLocalLockFileAssemblies if not present
+                if ($content -notmatch 'CopyLocalLockFileAssemblies') {
+                  $propGroupIndex = $content.IndexOf('<PropertyGroup>') + 1
+                  if ($propGroupIndex -gt 0) {
+                    $content = $content[0..($propGroupIndex-1)] + '  <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>' + $content[$propGroupIndex..$content.Length]
+                  }
+                }
+              }
               # For legacy-style: Replace or add <TargetFrameworkVersion>
-              if ($content -match '<TargetFrameworkVersion>.*</TargetFrameworkVersion>') {
-                $content = $content -replace '<TargetFrameworkVersion>.*</TargetFrameworkVersion>', '<TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>'
-              } else {
-                # Add if missing (insert after first <PropertyGroup>)
-                $propGroupIndex = $content.IndexOf('<PropertyGroup>') + 1
-                if ($propGroupIndex -gt 0) {
-                  $content = $content[0..($propGroupIndex-1)] + '<TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>' + $content[$propGroupIndex..$content.Length]
+              else {
+                if ($content -match '<TargetFrameworkVersion>.*</TargetFrameworkVersion>') {
+                  $content = $content -replace '<TargetFrameworkVersion>.*</TargetFrameworkVersion>', '<TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>'
+                } else {
+                  $propGroupIndex = $content.IndexOf('<PropertyGroup>') + 1
+                  if ($propGroupIndex -gt 0) {
+                    $content = $content[0..($propGroupIndex-1)] + '  <TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>' + $content[$propGroupIndex..$content.Length]
+                  }
                 }
               }
               
@@ -107,7 +116,10 @@ jobs:
             }
           }
         shell: pwsh
-
+      - name: Debug output directory
+        run: dir ./SharpHound/bin/Release/net481
+        shell: pwsh
+        continue-on-error: true
       # Step 7: Download and setup ConfuserEx
       - name: Setup ConfuserEx
         run: |
@@ -127,15 +139,9 @@ jobs:
               $templatePath = Join-Path ./.github/config "template.crproj"
               if (Test-Path $templatePath) {
                 Write-Output "Generating $crprojPath from template for $tool"
-                # Calculate actual relative path from repo root
                 $repoRoot = (Get-Location).Path
                 $exePath = $exe.FullName.Substring($repoRoot.Length + 1) -replace '\\', '/'
                 $content = (Get-Content $templatePath) -replace '{{EXE_PATH}}', $exePath -replace '{{OUTPUT_DIR}}', "$tool\output-obfuscated" -replace 'baseDir="."', 'baseDir="..\\..\\"'
-                # For SharpHound, add probePath for the dependency in NuGet cache
-                if ($tool -eq "SharpHound") {
-                  $probePath = '<probePath>%USERPROFILE%\.nuget\packages\sharphoundcommon\4.3.2\lib\net48</probePath>'
-                  $content = $content -replace '</project>', "$probePath</project>"
-                }
                 Set-Content $crprojPath $content
                 Write-Output "Generated $crprojPath content:"
                 Write-Output $content
