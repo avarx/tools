@@ -126,7 +126,9 @@ jobs:
               $templatePath = Join-Path ./.github/config "template.crproj"
               if (Test-Path $templatePath) {
                 Write-Output "Generating $crprojPath from template for $tool"
-                $content = (Get-Content $templatePath) -replace '{{EXE_PATH}}', $exe.FullName -replace '{{OUTPUT_DIR}}', "$tool\output-obfuscated"
+                # Try SDK-style path first, then legacy
+                $exePath = if ($exe.FullName -like "*net481*") { "$tool\bin\Release\net481\$tool.exe" } else { "$tool\bin\Release\$tool.exe" }
+                $content = (Get-Content $templatePath) -replace '{{EXE_PATH}}', $exePath -replace '{{OUTPUT_DIR}}', "$tool\output-obfuscated"
                 Set-Content $crprojPath $content
                 Write-Output "Generated $crprojPath content:"
                 Write-Output $content
@@ -146,18 +148,4 @@ jobs:
         run: |
           $date = Get-Date -Format "yyyy-MM-dd"
           $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
-          foreach ($tool in $tools) {
-            if (Test-Path ./$tool/output-obfuscated) {
-              Compress-Archive -Path ./$tool/output-obfuscated/* -DestinationPath ./$tool-$date.zip
-            }
-          }
-        shell: pwsh
-
-      # Step 10: Upload artifacts
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: obfuscated-binaries-net481
-          path: |
-            *.zip
-          retention-days: 7
+          foreach
