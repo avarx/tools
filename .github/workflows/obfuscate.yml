@@ -89,12 +89,12 @@ jobs:
     - name: Obfuscate SharpSCCM
       run: |
         cd Codecepticon/Codecepticon/Release/net6.0
-        ./Codecepticon.exe --action obfuscate --module csharp --solution ../../../main-repo/SharpSCCM/SharpSCCM.sln --rename-strategy random --encrypt-strings --output-mappings ../../../main-repo/obfuscated-mappings.html
+        ./Codecepticon.exe --action obfuscate --module csharp --solution "../../../SharpSCCM/SharpSCCM.sln" --project "../../../SharpSCCM/SharpSCCM.csproj" --assembly "SharpSCCM.exe" --rename-strategy random --encrypt-strings --verbose --output-mappings "../../../obfuscated-mappings.html"
       shell: powershell
 
     - name: Build Obfuscated SharpSCCM
       run: |
-        cd main-repo/SharpSCCM
+        cd SharpSCCM
         dotnet build SharpSCCM.sln --configuration Release --no-restore
       shell: powershell
 
@@ -102,11 +102,11 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: obfuscated-sharpsccm
-        path: main-repo/SharpSCCM/bin/Release/net6.0/SharpSCCM.exe
+        path: SharpSCCM/bin/Release/net6.0/SharpSCCM.exe
         retention-days: 7
 
     - name: Upload Mappings
       uses: actions/upload-artifact@v4
       with:
         name: obfuscation-mappings
-        path: main-repo/obfuscated-mappings.html
+        path: obfuscated-mappings.html
