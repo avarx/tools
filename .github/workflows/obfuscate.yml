@@ -127,9 +127,15 @@ jobs:
               $templatePath = Join-Path ./.github/config "template.crproj"
               if (Test-Path $templatePath) {
                 Write-Output "Generating $crprojPath from template for $tool"
-                # Use relative path from repo root, check SDK and legacy paths
-                $exePath = if ($exe.FullName -like "*net481*") { "$tool\bin\Release\net481\$tool.exe" } else { "$tool\bin\Release\$tool.exe" }
+                # Calculate actual relative path from repo root
+                $repoRoot = (Get-Location).Path
+                $exePath = $exe.FullName.Substring($repoRoot.Length + 1) -replace '\\', '/'
                 $content = (Get-Content $templatePath) -replace '{{EXE_PATH}}', $exePath -replace '{{OUTPUT_DIR}}', "$tool\output-obfuscated" -replace 'baseDir="."', 'baseDir="..\\..\\"'
+                # For SharpHound, add probePath for the dependency in NuGet cache
+                if ($tool -eq "SharpHound") {
+                  $probePath = '<probePath>%USERPROFILE%\.nuget\packages\sharphoundcommon\4.3.2\lib\net48</probePath>'
+                  $content = $content -replace '</project>', "$probePath</project>"
+                }
                 Set-Content $crprojPath $content
                 Write-Output "Generated $crprojPath content:"
                 Write-Output $content
