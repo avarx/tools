@@ -91,9 +91,9 @@ jobs:
         cd Codecepticon/Codecepticon/Release/net6.0
         Write-Output "Current directory: $PWD"
         Write-Output "Checking solution path:"
-        dir ../../../SharpSCCM
+        dir ../../../../SharpSCCM
         Write-Output "Checking project path:"
-        dir ../../../SharpSCCM/SharpSCCM.csproj
+        dir ../../../../SharpSCCM/SharpSCCM.csproj
         ./Codecepticon.exe --action obfuscate --module csharp --solution "../../../../SharpSCCM/SharpSCCM.sln" --project "../../../../SharpSCCM/SharpSCCM.csproj" --assembly "SharpSCCM.exe" --rename all --rename-method random --rename-charset abcdef --rename-length 8 --encrypt-strings --verbose --output-mappings "../../../../obfuscated-mappings.html"
       shell: powershell
 
@@ -105,7 +105,7 @@ jobs:
         Write-Output "Listing bin/Release/net6.0 directory:"
         dir bin/Release/net6.0
         Write-Output "Checking for obfuscated-mappings.html:"
-        dir ../../obfuscated-mappings.html
+        dir ../../../obfuscated-mappings.html
       shell: powershell
       continue-on-error: true
 
