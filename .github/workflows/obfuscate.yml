@@ -122,13 +122,14 @@ jobs:
           foreach ($tool in $tools) {
             $exe = Get-ChildItem -Path ./$tool -Recurse -Include "$tool.exe" | Where-Object { $_.FullName -like "*bin\Release*" } | Select-Object -First 1
             if ($exe) {
+              Write-Output "Found executable for $tool at: $($exe.FullName)"
               $crprojPath = Join-Path ./.github/config "$tool.crproj"
               $templatePath = Join-Path ./.github/config "template.crproj"
               if (Test-Path $templatePath) {
                 Write-Output "Generating $crprojPath from template for $tool"
-                # Try SDK-style path first, then legacy
+                # Use relative path from repo root, check SDK and legacy paths
                 $exePath = if ($exe.FullName -like "*net481*") { "$tool\bin\Release\net481\$tool.exe" } else { "$tool\bin\Release\$tool.exe" }
-                $content = (Get-Content $templatePath) -replace '{{EXE_PATH}}', $exePath -replace '{{OUTPUT_DIR}}', "$tool\output-obfuscated"
+                $content = (Get-Content $templatePath) -replace '{{EXE_PATH}}', $exePath -replace '{{OUTPUT_DIR}}', "$tool\output-obfuscated" -replace 'baseDir="."', 'baseDir="..\\..\\"'
                 Set-Content $crprojPath $content
                 Write-Output "Generated $crprojPath content:"
                 Write-Output $content
@@ -148,4 +149,18 @@ jobs:
         run: |
           $date = Get-Date -Format "yyyy-MM-dd"
           $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
-          foreach
+          foreach ($tool in $tools) {
+            if (Test-Path ./$tool/output-obfuscated) {
+              Compress-Archive -Path ./$tool/output-obfuscated/* -DestinationPath ./$tool-$date.zip
+            }
+          }
+        shell: pwsh
+
+      # Step 10: Upload artifacts
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: obfuscated-binaries-net481
+          path: |
+            *.zip
+          retention-days: 7
