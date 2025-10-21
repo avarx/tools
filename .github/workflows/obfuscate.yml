@@ -74,16 +74,6 @@ jobs:
         dotnet build --configuration Release --no-restore --output Release/net6.0
       shell: powershell
 
-    - name: Manually Copy Required Files
-      run: |
-        cd Codecepticon/Codecepticon
-        New-Item -ItemType Directory -Force -Path Release/net6.0/Help
-        New-Item -ItemType Directory -Force -Path Release/net6.0/Templates
-        Copy-Item CommandLineGenerator.html Release/net6.0/
-        Copy-Item -Recurse Help/* Release/net6.0/Help/
-        Copy-Item -Recurse Templates/* Release/net6.0/Templates/
-      shell: powershell
-
     - name: Debug Build Output
       run: |
         cd Codecepticon/Codecepticon/Release/net6.0
