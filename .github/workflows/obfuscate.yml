@@ -94,7 +94,7 @@ jobs:
         dir ../../../SharpSCCM
         Write-Output "Checking project path:"
         dir ../../../SharpSCCM/SharpSCCM.csproj
-        ./Codecepticon.exe --action obfuscate --module csharp --solution "../../../SharpSCCM/SharpSCCM.sln" --project "../../../SharpSCCM/SharpSCCM.csproj" --assembly "SharpSCCM.exe" --rename-strategy random --encrypt-strings --rewrite --verbose --output-mappings "../../../obfuscated-mappings.html"
+        ./Codecepticon.exe --action obfuscate --module csharp --solution "../../../../SharpSCCM/SharpSCCM.sln" --project "../../../../SharpSCCM/SharpSCCM.csproj" --assembly "SharpSCCM.exe" --rename all --rename-method random --rename-charset abcdef --rename-length 8 --encrypt-strings --verbose --output-mappings "../../../../obfuscated-mappings.html"
       shell: powershell
 
     - name: Debug Obfuscated Files
