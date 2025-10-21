@@ -17,7 +17,7 @@ jobs:
     - name: Setup .NET SDK
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '6.0.x'  # SharpSCCM uses .NET 6; adjust if needed
+        dotnet-version: '6.0.x'  # Codecepticon and SharpSCCM typically use .NET 6
 
     - name: Install NuGet
       run: |
@@ -30,7 +30,6 @@ jobs:
       run: |
         git clone https://github.com/Mayyhem/SharpSCCM.git
         cd SharpSCCM
-        # Restore NuGet packages explicitly for packages.config
         D:\a\tools\nuget\nuget.exe restore SharpSCCM.sln -Source "https://api.nuget.org/v3/index.json"
       shell: powershell
 
@@ -40,39 +39,57 @@ jobs:
         dotnet build SharpSCCM.sln --configuration Release --no-restore
       shell: powershell
 
-    - name: Clone and build Codecepticon
+    - name: Clone Codecepticon
       run: |
         git clone https://github.com/sadreck/Codecepticon.git
+      shell: powershell
+
+    - name: Restore Codecepticon with Pinned Roslyn
+      run: |
         cd Codecepticon
-        # Pin Roslyn packages to 3.9.0
         dotnet add Codecepticon package Microsoft.CodeAnalysis.CSharp.Workspaces --version 3.9.0
         dotnet add Codecepticon package Microsoft.CodeAnalysis.Workspaces.MSBuild --version 3.9.0
         dotnet restore
-        dotnet build --configuration Release --no-restore
       shell: powershell
+
+    - name: Build Codecepticon
+      run: |
+        cd Codecepticon
+        dotnet build --configuration Release --no-restore --output Release/net6.0
+      shell: powershell
+
+    - name: Debug Directory Structure
+      run: |
+        cd Codecepticon
+        dir
+        cd Release
+        dir
+        cd net6.0
+        dir
+      shell: powershell
+      continue-on-error: true  # Continue even if net6.0 is missing to see output
 
     - name: Obfuscate SharpSCCM
       run: |
         cd Codecepticon/Release/net6.0
-        # Basic obfuscation; adjust params via CommandLineGenerator.html
         ./Codecepticon.exe --action obfuscate --module csharp --solution ../../SharpSCCM/SharpSCCM.sln --verbose --rename-strategy random --encrypt-strings --output-mappings ../../obfuscated-mappings.html
       shell: powershell
 
-    - name: Build obfuscated SharpSCCM
+    - name: Build Obfuscated SharpSCCM
       run: |
         cd SharpSCCM
         D:\a\tools\nuget\nuget.exe restore SharpSCCM.sln -Source "https://api.nuget.org/v3/index.json"
         dotnet build SharpSCCM.sln --configuration Release --no-restore
       shell: powershell
 
-    - name: Upload obfuscated binary
+    - name: Upload Obfuscated Binary
       uses: actions/upload-artifact@v4
       with:
         name: obfuscated-sharpsccm
         path: SharpSCCM/bin/Release/net6.0/SharpSCCM.exe
         retention-days: 7
 
-    - name: Upload mappings
+    - name: Upload Mappings
       uses: actions/upload-artifact@v4
       with:
         name: obfuscation-mappings
