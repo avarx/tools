@@ -44,23 +44,25 @@ jobs:
         git clone https://github.com/sadreck/Codecepticon.git
       shell: powershell
 
-    - name: Fix Codecepticon.csproj Post-Build Commands
+    - name: Disable Post-Build Commands in Codecepticon.csproj
       run: |
         cd Codecepticon/Codecepticon
         # Backup original .csproj
         Copy-Item Codecepticon.csproj Codecepticon.csproj.bak
-        # Replace invalid post-build paths with correct ones
-        (Get-Content Codecepticon.csproj) -replace 'copy ".*CommandLineGenerator.html" ".*CommandLineGenerator.html"', 'copy "CommandLineGenerator.html" "Release\net6.0\CommandLineGenerator.html"' | Set-Content Codecepticon.csproj
-        (Get-Content Codecepticon.csproj) -replace 'xcopy ".*Help" ".*Help" /Y /I /E', 'xcopy "Help" "Release\net6.0\Help" /Y /I /E' | Set-Content Codecepticon.csproj
-        (Get-Content Codecepticon.csproj) -replace 'xcopy ".*Templates" ".*Templates" /Y /I /E', 'xcopy "Templates" "Release\net6.0\Templates" /Y /I /E' | Set-Content Codecepticon.csproj
+        # Comment out the entire PostBuildEvent block
+        (Get-Content Codecepticon.csproj) -replace '<PostBuildEvent>.*?</PostBuildEvent>', '<PostBuildEvent></PostBuildEvent>' | Set-Content Codecepticon.csproj
       shell: powershell
 
-    - name: Debug Codecepticon Directory
+    - name: Debug Codecepticon Directory and .csproj
       run: |
         cd Codecepticon/Codecepticon
+        Write-Output "Listing Codecepticon directory:"
         dir
+        Write-Output "Listing Help directory:"
         dir Help
+        Write-Output "Listing Templates directory:"
         dir Templates
+        Write-Output "Content of Codecepticon.csproj:"
         Get-Content Codecepticon.csproj
       shell: powershell
       continue-on-error: true
@@ -79,12 +81,25 @@ jobs:
         dotnet build --configuration Release --no-restore --output Release/net6.0
       shell: powershell
 
-    - name: Debug Build Output
+    - name: Manually Copy Required Files
       run: |
         cd Codecepticon/Codecepticon
+        New-Item -ItemType Directory -Force -Path Release/net6.0/Help
+        New-Item -ItemType Directory -Force -Path Release/net6.0/Templates
+        Copy-Item CommandLineGenerator.html Release/net6.0/
+        Copy-Item -Recurse Help/* Release/net6.0/Help/
+        Copy-Item -Recurse Templates/* Release/net6.0/Templates/
+      shell: powershell
+
+    - name: Debug Build Output
+      run: |
+        cd Codecepticon/Codecepticon/Release/net6.0
+        Write-Output "Listing Release/net6.0 directory:"
         dir
-        cd Release/net6.0
-        dir
+        Write-Output "Listing Release/net6.0/Help directory:"
+        dir Help
+        Write-Output "Listing Release/net6.0/Templates directory:"
+        dir Templates
       shell: powershell
       continue-on-error: true
 
