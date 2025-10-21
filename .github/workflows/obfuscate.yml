@@ -41,7 +41,6 @@ jobs:
               # For SDK-style: Replace <TargetFramework> and add CopyLocalLockFileAssemblies
               if ($content -match '<Project Sdk=') {
                 $content = $content -replace '<TargetFramework>.*</TargetFramework>', '<TargetFramework>net481</TargetFramework>'
-                # Add CopyLocalLockFileAssemblies if not present
                 if ($content -notmatch 'CopyLocalLockFileAssemblies') {
                   $propGroupIndex = $content.IndexOf('<PropertyGroup>') + 1
                   if ($propGroupIndex -gt 0) {
@@ -62,6 +61,21 @@ jobs:
               }
               
               Set-Content $csproj.FullName $content
+              
+              # For SharpHound, create FodyWeavers.xml to exclude SharpHoundCommonLib from Costura
+              if ($tool -eq "SharpHound") {
+                $fodyWeaversPath = Join-Path $csproj.DirectoryName "FodyWeavers.xml"
+                $fodyContent = @"
+      <?xml version="1.0" encoding="utf-8"?>
+      <Weavers>
+        <Costura>
+          <ExcludeAssemblies>SharpHoundCommonLib</ExcludeAssemblies>
+        </Costura>
+      </Weavers>
+      "@
+                Set-Content $fodyWeaversPath $fodyContent
+                Write-Output "Created $fodyWeaversPath to exclude SharpHoundCommonLib from Costura embedding"
+              }
             }
           }
         shell: pwsh
