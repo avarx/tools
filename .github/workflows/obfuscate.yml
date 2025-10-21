@@ -1,10 +1,8 @@
 name: Weekly Obfuscated Builds for .NET Framework 4.8.1
-
 on:
   schedule:
     - cron: '0 0 * * 1' # Runs every Monday at midnight UTC
   workflow_dispatch: # Allows manual triggering
-
 jobs:
   build-and-obfuscate:
     runs-on: windows-latest # .NET Framework 4.8.1 is pre-installed
@@ -12,7 +10,6 @@ jobs:
       # Step 1: Checkout the automation repo
       - name: Checkout automation repository
         uses: actions/checkout@v4
-
       # Step 2: Clone tool repositories
       - name: Clone repositories
         run: |
@@ -22,13 +19,11 @@ jobs:
           git clone https://github.com/GhostPack/Certify.git
           git clone https://github.com/Mayyhem/SharpSCCM.git
         shell: pwsh
-
       # Step 3: Install NuGet to restore dependencies
       - name: Install NuGet
         run: |
           Invoke-WebRequest -Uri "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe" -OutFile "nuget.exe"
         shell: pwsh
-
       # Step 4: Update .csproj files for .NET Framework 4.8.1 (handle both SDK and legacy styles)
       - name: Update project files
         run: |
@@ -79,7 +74,6 @@ jobs:
             }
           }
         shell: pwsh
-
       # Step 5: Find MSBuild path using vswhere
       - name: Locate MSBuild
         id: vswhere
@@ -113,7 +107,6 @@ jobs:
             exit 1
           }
         shell: pwsh
-
       # Step 6: Restore NuGet packages and build tools with MSBuild
       - name: Restore and build tools
         run: |
@@ -130,18 +123,29 @@ jobs:
             }
           }
         shell: pwsh
-      - name: Debug output directory
-        run: dir ./SharpHound/bin/Release/net481
+      # Step 7: Debug SharpHound output directory
+      - name: Debug SharpHound output directory
+        run: |
+          dir ./SharpHound/bin/Release/net481
         shell: pwsh
         continue-on-error: true
-      # Step 7: Download and setup ConfuserEx
+      # Step 8: Debug FodyWeavers.xml
+      - name: Debug FodyWeavers.xml
+        run: |
+          if (Test-Path ./SharpHound/FodyWeavers.xml) {
+            Get-Content ./SharpHound/FodyWeavers.xml
+          } else {
+            Write-Output "FodyWeavers.xml not found"
+          }
+        shell: pwsh
+        continue-on-error: true
+      # Step 9: Download and setup ConfuserEx
       - name: Setup ConfuserEx
         run: |
           Invoke-WebRequest -Uri "https://github.com/mkaring/ConfuserEx/releases/download/v1.6.0/ConfuserEx-CLI.zip" -OutFile "ConfuserEx.zip"
           Expand-Archive -Path ConfuserEx.zip -DestinationPath ./ConfuserEx
         shell: pwsh
-
-      # Step 8: Obfuscate with ConfuserEx
+      # Step 10: Obfuscate with ConfuserEx
       - name: Obfuscate with ConfuserEx
         run: |
           $tools = @("SharpHound", "Seatbelt", "Rubeus", "Certify", "SharpSCCM")
@@ -169,8 +173,7 @@ jobs:
             }
           }
         shell: pwsh
-
-      # Step 9: Package and store artifacts
+      # Step 11: Package and store artifacts
       - name: Package artifacts
         run: |
           $date = Get-Date -Format "yyyy-MM-dd"
@@ -181,8 +184,7 @@ jobs:
             }
           }
         shell: pwsh
-
-      # Step 10: Upload artifacts
+      # Step 12: Upload artifacts
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
