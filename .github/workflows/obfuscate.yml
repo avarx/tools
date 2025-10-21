@@ -66,18 +66,18 @@ jobs:
               if ($tool -eq "SharpHound") {
                 $fodyWeaversPath = Join-Path $csproj.DirectoryName "FodyWeavers.xml"
                 $fodyContent = @"
-      <?xml version="1.0" encoding="utf-8"?>
-      <Weavers>
-        <Costura>
-          <ExcludeAssemblies>SharpHoundCommonLib</ExcludeAssemblies>
-        </Costura>
-      </Weavers>
-      "@
-                Set-Content $fodyWeaversPath $fodyContent
-                Write-Output "Created $fodyWeaversPath to exclude SharpHoundCommonLib from Costura embedding"
-              }
-            }
-          }
+                    <?xml version="1.0" encoding="utf-8"?>
+                    <Weavers>
+                      <Costura>
+                        <ExcludeAssemblies>SharpHoundCommonLib</ExcludeAssemblies>
+                      </Costura>
+                    </Weavers>
+                    "@
+                              Set-Content $fodyWeaversPath $fodyContent
+                              Write-Output "Created $fodyWeaversPath to exclude SharpHoundCommonLib from Costura embedding"
+                            }
+                          }
+                        }
         shell: pwsh
 
       # Step 5: Find MSBuild path using vswhere
